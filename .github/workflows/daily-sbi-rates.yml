@@ -1,0 +1,30 @@
+# .github/workflows/daily-sbi-rates.yml
+name: Update SBI TT BUY rates
+
+on:
+  schedule:
+    # 18:00 UTC = 11:30 PM IST, after sbi-fx-ratekeeper's own daily runs (10:30/16:30 UTC)
+    - cron: "0 18 * * *"
+  workflow_dispatch:
+
+jobs:
+  update-rates:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: pip install -r scripts/requirements.txt
+
+      - name: Fetch today's SBI rates
+        run: python scripts/extract_sbi_rates.py download
+
+      - uses: stefanzweifel/git-auto-commit-action@v5
+        with:
+          commit_message: "Auto Commit: SBI TT BUY rates"
+          file_pattern: scripts/data/sbi_tt_buy_rates.csv
