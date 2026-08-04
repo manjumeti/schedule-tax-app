@@ -169,6 +169,8 @@ class YfinanceStockPriceProvider:
 
         stock = yf.Ticker(ticker)
         history = stock.history(start=f"{year}-01-01", end=f"{year}-12-31")
+        # Drop rows with no settled close (e.g. today's row while the market is still open).
+        history = history.dropna(subset=["Close"])
         if history.empty:
             raise MarketDataUnavailableError(
                 f"No stock price history found for {ticker} in {year}"
