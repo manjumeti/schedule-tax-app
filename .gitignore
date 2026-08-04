@@ -1,0 +1,20 @@
+# Backend (Python)
+.venv/
+__pycache__/
+*.pyc
+*.db
+exports/
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Frontend (Node)
+node_modules/
+dist/
+coverage/
+
+# Env files
+.env
+
+# OS
+.DS_Store
