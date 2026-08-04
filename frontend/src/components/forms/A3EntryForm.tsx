@@ -26,7 +26,7 @@ const DEFAULTS: A3FormValues = {
 };
 
 interface Props {
-  onAdd: (values: A3FormValues) => void;
+  readonly onAdd: (values: A3FormValues) => void;
 }
 
 export function A3EntryForm({ onAdd }: Props) {
@@ -89,7 +89,7 @@ export function A3EntryForm({ onAdd }: Props) {
             fullWidth
             type="date"
             label="Date of Acquisition"
-            InputLabelProps={{ shrink: true }}
+            slotProps={{ inputLabel: { shrink: true } }}
             {...register("acquisition_date")}
             error={!!errors.acquisition_date}
             helperText={errors.acquisition_date?.message}
