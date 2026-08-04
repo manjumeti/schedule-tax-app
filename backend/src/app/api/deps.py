@@ -42,7 +42,7 @@ def get_engine() -> TaxCalculationEngine:
 @lru_cache
 def get_market_data_provider() -> MarketDataProvider:
     settings = get_settings()
-    return build_market_data_provider(settings.market_data_provider, settings.sbi_pdf_dir)
+    return build_market_data_provider(settings.market_data_provider, settings.sbi_rates_csv_dir)
 
 
 @lru_cache

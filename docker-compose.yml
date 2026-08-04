@@ -32,9 +32,9 @@ services:
       APP_LOG_LEVEL: INFO
       APP_LOG_JSON: "true"
       APP_MARKET_DATA_PROVIDER: yfinance_sbi
-      APP_SBI_PDF_DIR: /app/sbi-fx-ratekeeper/pdf_files
+      APP_SBI_RATES_CSV_DIR: /app/scripts/data
     volumes:
-      - ../sbi-fx-ratekeeper/pdf_files:/app/sbi-fx-ratekeeper/pdf_files:ro
+      - ./scripts/data:/app/scripts/data:ro
     depends_on:
       db:
         condition: service_healthy

@@ -41,7 +41,7 @@ class Settings(BaseSettings):
     # Selects which market-data provider the calculation engine uses for
     # Form A3 valuations when a caller does not supply explicit rates.
     market_data_provider: Literal["manual", "yfinance_sbi"] = "yfinance_sbi"
-    sbi_pdf_dir: str = "../../sbi-fx-ratekeeper/pdf_files"
+    sbi_rates_csv_dir: str = "../scripts/data"
 
 
 @lru_cache

@@ -1,20 +1,20 @@
 """Market data / FX rate lookup, ported from the existing `itr` repository.
 
 This isolates the *only* piece of the original calculation script that
-performs I/O (PDF parsing of SBI reference rates, Yahoo Finance calls) behind
-a small Protocol, so the rest of the engine stays pure and testable, and so
-this provider can be swapped (e.g. for a paid FX-rate API) without touching
-callers.
+performs I/O (SBI reference rate lookup, Yahoo Finance calls) behind a small
+Protocol, so the rest of the engine stays pure and testable, and so this
+provider can be swapped (e.g. for a paid FX-rate API) without touching callers.
 
-The core formula reused from `itr/src/generate_schedule_fa_a3.py::get_sbi_tt_rate`
-is preserved: locate the PDF for the SBI reference-rate publication date
-closest to the requested date (searching backwards first) and extract the
-USD TT buying rate.
+FX rates are read from the per-year "wide" CSVs produced by
+`schedule-tax-app/scripts/extract_sbi_rates.py` (one row per date, one column
+per currency's SBI TT BUY rate), which are kept up to date by the
+`daily-sbi-rates` GitHub Action. The nearest-date search (backwards first)
+mirrors `get_sbi_tt_rate` from `itr/src/generate_schedule_fa_a3.py`.
 """
+import csv
 import os
-import re
 from datetime import date, timedelta
-from decimal import Decimal
+from decimal import Decimal, InvalidOperation
 from typing import Protocol
 
 from app.core.exceptions import MarketDataUnavailableError
@@ -43,75 +43,85 @@ class ManualMarketDataProvider:
         )
 
 
-class YfinanceSbiMarketDataProvider:
-    """Looks up the SBI TT buying rate from the locally mirrored PDF archive.
+class CsvSbiMarketDataProvider:
+    """Looks up the SBI TT BUY rate from the per-year CSVs in scripts/data/.
 
-    Ported from `get_sbi_tt_rate` in the existing `itr` repository, with prints
-    replaced by structured logging and exceptions instead of returning None.
+    Each CSV has one row per date and one column per currency (see
+    `scripts/extract_sbi_rates.py`). A rate of 0 means SBI did not publish a
+    card rate for that currency that day, so it is treated the same as a
+    missing row when searching nearby dates.
     """
 
-    def __init__(self, pdf_dir: str, max_days_search: int = 7) -> None:
-        self._pdf_dir = pdf_dir
+    def __init__(self, csv_dir: str, max_days_search: int = 7) -> None:
+        self._csv_dir = csv_dir
         self._max_days_search = max_days_search
-        self._cache: dict[tuple[str, date], Decimal] = {}
+        self._year_cache: dict[int, dict[str, dict[str, str]]] = {}
+        self._rate_cache: dict[tuple[str, date], Decimal] = {}
 
     def get_fx_rate(self, currency: str, on_date: date) -> Decimal:
-        if currency.upper() != "USD":
-            raise MarketDataUnavailableError(
-                f"SBI PDF archive only supports USD rates, got {currency}"
-            )
+        currency = currency.upper()
+        cache_key = (currency, on_date)
+        if cache_key in self._rate_cache:
+            return self._rate_cache[cache_key]
 
-        cache_key = (currency.upper(), on_date)
-        if cache_key in self._cache:
-            return self._cache[cache_key]
-
-        rate = self._lookup_rate_near_date(on_date)
+        rate = self._lookup_rate_near_date(currency, on_date)
         if rate is None:
             raise MarketDataUnavailableError(
-                f"No SBI reference rate found within {self._max_days_search} days of "
-                f"{on_date.isoformat()}"
+                f"No SBI TT BUY rate found for {currency} within "
+                f"{self._max_days_search} days of {on_date.isoformat()}"
             )
-        self._cache[cache_key] = rate
+        self._rate_cache[cache_key] = rate
         return rate
 
-    def _lookup_rate_near_date(self, target_date: date) -> Decimal | None:
-        import pypdf
+    def _load_year(self, year: int) -> dict[str, dict[str, str]]:
+        if year not in self._year_cache:
+            csv_path = os.path.join(self._csv_dir, str(year), "sbi_tt_buy_rates.csv")
+            rows: dict[str, dict[str, str]] = {}
+            if os.path.exists(csv_path):
+                with open(csv_path, "r", encoding="utf-8", newline="") as fh:
+                    for row in csv.DictReader(fh):
+                        rows[row["DATE"]] = row
+            self._year_cache[year] = rows
+        return self._year_cache[year]
 
+    def _candidate_dates(self, target_date: date):
+        """Dates to try, nearest first, preferring earlier dates on ties."""
         for day_offset in range(self._max_days_search + 1):
             for direction in (-1, 1):
                 if day_offset == 0 and direction == 1:
                     continue
-                check_date = target_date + timedelta(days=day_offset * direction)
-                pdf_path = os.path.join(
-                    self._pdf_dir,
-                    str(check_date.year),
-                    str(check_date.month),
-                    f"{check_date.isoformat()}.pdf",
+                yield target_date + timedelta(days=day_offset * direction)
+
+    def _rate_on(self, currency: str, on_date: date) -> Decimal | None:
+        row = self._load_year(on_date.year).get(on_date.isoformat())
+        raw_rate = row.get(currency) if row else None
+        if not raw_rate:
+            return None
+        try:
+            rate = Decimal(raw_rate)
+        except InvalidOperation:
+            return None
+        return rate if rate > 0 else None  # 0 means SBI published no card rate that day
+
+    def _lookup_rate_near_date(self, currency: str, target_date: date) -> Decimal | None:
+        for check_date in self._candidate_dates(target_date):
+            rate = self._rate_on(currency, check_date)
+            if rate is not None:
+                logger.info(
+                    "sbi_rate_found",
+                    currency=currency,
+                    requested_date=target_date.isoformat(),
+                    matched_date=check_date.isoformat(),
                 )
-                if not os.path.exists(pdf_path):
-                    continue
-                try:
-                    with open(pdf_path, "rb") as fh:
-                        reader = pypdf.PdfReader(fh)
-                        text = "".join(page.extract_text() for page in reader.pages)
-                    match = re.search(r"USD.*?(\d+\.\d+)", text)
-                    if match:
-                        logger.info(
-                            "sbi_rate_found",
-                            requested_date=target_date.isoformat(),
-                            matched_date=check_date.isoformat(),
-                        )
-                        return Decimal(match.group(1))
-                except Exception:  # noqa: BLE001 - degrade to "not found", logged below
-                    logger.warning("sbi_pdf_parse_failed", path=pdf_path, exc_info=True)
+                return rate
         return None
 
 
 def build_market_data_provider(
-    provider: str, sbi_pdf_dir: str
+    provider: str, sbi_rates_csv_dir: str
 ) -> MarketDataProvider:
     if provider == "yfinance_sbi":
-        return YfinanceSbiMarketDataProvider(pdf_dir=sbi_pdf_dir)
+        return CsvSbiMarketDataProvider(csv_dir=sbi_rates_csv_dir)
     return ManualMarketDataProvider()
 
 

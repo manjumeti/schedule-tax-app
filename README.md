@@ -6,7 +6,9 @@ Tax Return filing.
 
 Built as a companion to the [`itr`](../itr) calculation scripts and the
 [`sbi-fx-ratekeeper`](../sbi-fx-ratekeeper) exchange-rate scraper in this workspace — the calculation
-logic is reused/ported behind a stable interface rather than duplicated.
+logic is reused/ported behind a stable interface rather than duplicated. SBI TT BUY rates are kept
+in `scripts/data/<year>/sbi_tt_buy_rates.csv` (see `scripts/README.md`), refreshed daily from
+sbi-fx-ratekeeper by the `daily-sbi-rates` GitHub Action in this repo.
 
 ## Architecture
 
@@ -180,12 +182,12 @@ by the original spec. Called out here explicitly rather than left implicit:
   market-data modules are untested.
 - **Country/currency lists are curated (~30 entries)**, not exhaustive ISO 3166/4217 lists. Extending
   them only requires updating `dto/common.py` (backend) and `validators/schemas.ts` (frontend).
-- **Market data provider (`YfinanceSbiMarketDataProvider`/`YfinanceStockPriceProvider`)** powers the
+- **Market data provider (`CsvSbiMarketDataProvider`/`YfinanceStockPriceProvider`)** powers the
   lot-based Form A3 flow (`POST /api/v1/a3/calculate-from-lots`), which mirrors the existing `itr`
   repo's `generate_schedule_fa_a3.py`: enter RSU/ESPP vest lots (date, cost, quantity) and the FX
-  rate + peak/closing stock price are fetched automatically. This requires
-  `APP_MARKET_DATA_PROVIDER=yfinance_sbi`; with the default `manual` provider this endpoint returns a
-  clear error.
+  rate (from `scripts/data/<year>/sbi_tt_buy_rates.csv`) + peak/closing stock price are fetched
+  automatically. This requires `APP_MARKET_DATA_PROVIDER=yfinance_sbi`; with the default `manual`
+  provider this endpoint returns a clear error.
 - **No Form 67 / Schedule TR** support yet; the domain layer and repository pattern are structured so
   a new schedule type can be added by mirroring the FSI/A3 module structure.
 - **Frontend bundle is a single ~750 kB chunk.** For production, add route-based `React.lazy()` code
