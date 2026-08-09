@@ -13,10 +13,10 @@ jobs:
     permissions:
       contents: write
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Set up Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v7
         with:
           python-version: "3.12"
 
@@ -26,7 +26,7 @@ jobs:
       - name: Fetch today's SBI rates
         run: python scripts/extract_sbi_rates.py download
 
-      - uses: stefanzweifel/git-auto-commit-action@v5
+      - uses: stefanzweifel/git-auto-commit-action@v7
         with:
           commit_message: "Auto Commit: SBI TT BUY rates"
           file_pattern: scripts/data/*/sbi_tt_buy_rates.csv
